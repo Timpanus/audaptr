@@ -61,24 +61,28 @@ namespace Audaptr
 		AudIO *pAudioIO = reinterpret_cast<AudIO *>(pUserData);
 
 		size_t uNumToWrite = (size_t)FramesPerBuffer * pAudioIO->InputParams_.channelCount;
-		size_t uNumToRead = (size_t)FramesPerBuffer * pAudioIO->OutputParams_.channelCount, uAvailable;
 
+		// Read from the output buffer and write to the device
+		size_t uNumToRead = (size_t)FramesPerBuffer * pAudioIO->OutputParams_.channelCount, uAvailable;
 		auto *pfBuff = pAudioIO->OutputBuffer_.ReadAcquire(uAvailable);
-		size_t uThisWrite = (uAvailable > uNumToWrite) ? uNumToWrite : uAvailable;
-		memcpy(pOutputBuffer, pfBuff, uThisWrite * sizeof(float));
-		uNumToWrite -= uThisWrite;
-		pOutputBuffer = (float *)pOutputBuffer + uThisWrite;
-		// This check is necessary because the buffer may segment read transactions.
-		if((uNumToWrite > 0) && pAudioIO->OutputBuffer_.IsOpen()) {
-			pfBuff = pAudioIO->OutputBuffer_.ReadAcquire(uAvailable);
-			uThisWrite = (uAvailable > uNumToWrite) ? uNumToWrite : uAvailable;
-			memcpy(pOutputBuffer, pfBuff, uThisWrite * sizeof(float));
-			uNumToWrite -= uThisWrite;
-			pOutputBuffer = (float *)pOutputBuffer + uThisWrite;
-			pAudioIO->OutputBuffer_.ReadRelease(uThisWrite);
+		if(pfBuff) {
+			size_t uThisRead = (uAvailable > uNumToRead) ? uNumToRead : uAvailable;
+			memcpy(pOutputBuffer, pfBuff, uThisRead * sizeof(float));
+			uNumToRead -= uThisRead;
+			pOutputBuffer = (float *)pOutputBuffer + uThisRead;
+			pAudioIO->OutputBuffer_.ReadRelease(uThisRead);
+			// This check is necessary because the buffer may segment read transactions.
+			if((uNumToRead > 0) && pAudioIO->OutputBuffer_.IsOpen()) {
+				pfBuff = pAudioIO->OutputBuffer_.ReadAcquire(uAvailable);
+				uThisRead = (uAvailable > uNumToRead) ? uNumToRead : uAvailable;
+				memcpy(pOutputBuffer, pfBuff, uThisRead * sizeof(float));
+				uNumToRead -= uThisRead;
+				pOutputBuffer = (float *)pOutputBuffer + uThisRead;
+				pAudioIO->OutputBuffer_.ReadRelease(uThisRead);
+			}
 		}
 		// If no free space in the output buffer, increment a count to record the overflow; do not block in this callback.
-		if((uNumToWrite > 0) || (StatusFlags & paOutputOverflow))
+		if((uNumToRead > 0) || (StatusFlags & paOutputOverflow))
 			pAudioIO->OutputOverflowCount_++;
 
 		// If no free space in the input buffer, increment a count to record the overflow; do not block in this callback.
@@ -172,9 +176,27 @@ namespace Audaptr
 		}
 		else
 			PaInitFlag_++;
-		auto pInputParams = ((Binding_.Type() == IOType::Input) || (Binding_.Type() == IOType::Duplex)) ? &InputParams_ : nullptr;
-		auto pOutputParams = ((Binding_.Type() == IOType::Output) || (Binding_.Type() == IOType::Duplex)) ? &OutputParams_ : nullptr;
-		iPaErr = Pa_OpenStream(&pPaStream_, pInputParams, pOutputParams, SampleRate_Hz_, FramesPerBuffer, paClipOff | paDitherOff, InputPaCallback, this);
+		PaStreamParameters *pInputParams = nullptr, *pOutputParams = nullptr;
+		auto PaCallback = InputPaCallback;
+		switch(Binding_.Type()) {
+		case IOType::Input:
+			pInputParams = &InputParams_;
+			InputBuffer_.Open();
+			break;
+		case IOType::Output:
+			pOutputParams = &OutputParams_;
+			PaCallback = OutputPaCallback;
+			OutputBuffer_.Open();
+			break;
+		case IOType::Duplex:
+			pInputParams = &InputParams_;
+			pOutputParams = &OutputParams_;
+			PaCallback = DuplexPaCallback;
+			InputBuffer_.Open();
+			OutputBuffer_.Open();
+			break;
+		}
+		iPaErr = Pa_OpenStream(&pPaStream_, pInputParams, pOutputParams, SampleRate_Hz_, FramesPerBuffer, paClipOff | paDitherOff, PaCallback, this);
 		if(iPaErr != 0) {
 			Status_ = Binding_.TypeName() + ": " + string(Pa_GetDeviceInfo(InputParams_.device)->name) + " error: " + g_mapPaError[iPaErr];
 			return false;
@@ -185,10 +207,18 @@ namespace Audaptr
 		InputOverflowCount_ = 0;
 		const PaStreamInfo *pStreamInfo = Pa_GetStreamInfo(pPaStream_);
 		double dInputLatency = (double)pStreamInfo->inputLatency;
+		switch(Binding_.Type()) {
+		case IOType::Input:
+			Latency_s_ = (double)pStreamInfo->inputLatency;
+			break;
+		case IOType::Output:
+			Latency_s_ = (double)pStreamInfo->outputLatency;
+			break;
+		case IOType::Duplex:
+			Latency_s_ = (double)pStreamInfo->inputLatency + (double)pStreamInfo->outputLatency;
+			break;
+		}
 		UpdateStatus();
-
-		InputBuffer_.Open();
-
 		return true;
 	}
 
@@ -233,16 +263,6 @@ namespace Audaptr
 		return false;
 	}
 
-	QuickBuffer<float> &AudIO::InBuffer()
-	{
-		return InputBuffer_;
-	}
-
-	QuickBuffer<float> &AudIO::OutBuffer()
-	{
-		return OutputBuffer_;
-	}
-
 	double AudIO::SampleRate_Hz() const
 	{
 		return SampleRate_Hz_;
@@ -256,14 +276,18 @@ namespace Audaptr
 	}
 #endif
 
+	double AudIO::Latency_s()
+	{
+		return Latency_s_;
+	}
+
 	void AudIO::UpdateStatus()
 	{
 		Status_.clear();
 		const PaStreamInfo *pStreamInfo = Pa_GetStreamInfo(pPaStream_);
 		if((Binding_.Type_ == IOType::Input) || (Binding_.Type_ == IOType::Duplex)) {
 			Status_ += "Input: " + string(Pa_GetDeviceInfo(InputParams_.device)->name) + " open: " + to_string_precision(1e-3 * (double)SampleRate_Hz_, 3) + "kHz, latency: " +
-				to_string_precision(pStreamInfo->inputLatency, 3) + "s, Input overflows: " + to_string(InputOverflowCount_) + ", Output overflows: " + to_string(OutputOverflowCount_);
-			// + ", used: " + to_string(m_vfInputBuffer.UsedSpace())
+				to_string_precision(1e3 * Latency_s_, 4) + "ms, Input overflows: " + to_string(InputOverflowCount_) + ", Output overflows: " + to_string(OutputOverflowCount_);
 		}
 	}
 

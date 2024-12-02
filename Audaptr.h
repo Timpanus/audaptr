@@ -31,6 +31,15 @@ namespace Audaptr {
 	static constexpr std::array<double, 13> StandardSampleRates_Hz = {8000.0, 11025.0, 16000.0, 22050.0, 32000.0, 44100.0, 48000.0,
 		88200.0, 96000.0, 176400.0, 192000.0, 352800.0, 384000.0};
 
+	/// @brief Type of audio IO
+	enum class IOType {
+		Input,
+		Output,
+		Duplex
+	};
+
+	extern const std::vector<std::string> IOTypeNames;
+
 	/// @brief Map of error strings
 	extern std::map<int, const std::string> g_mapPaError;
 
@@ -49,13 +58,6 @@ namespace Audaptr {
 		Exception(const std::string& What) :
 			std::runtime_error(What + " (" + std::string(Pa_GetVersionInfo()->versionText) + ")")
 		{}
-	};
-
-	/// @brief Type of audio IO
-	enum class IOType {
-		Input,
-		Output,
-		Duplex
 	};
 
 	/// @brief String representation of the PortAudio version

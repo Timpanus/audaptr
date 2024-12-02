@@ -66,7 +66,7 @@ namespace Audaptr
 							if(!vdSampleRates_Hz.empty()) {
 								Bindings_.emplace_back(Pa_GetHostApiInfo(iApiId)->name, DeviceInfo.name, IOType::Output, DeviceInfo, vdSampleRates_Hz, iDevice);
 								if(iDevice == iDefaultOutputDevice)
-									DefaultInputDevice_ = Binding(Pa_GetHostApiInfo(iApiId)->name, DeviceInfo.name, IOType::Output, DeviceInfo, {DeviceInfo.defaultSampleRate}, iDevice);
+									DefaultOutputDevice_ = Binding(Pa_GetHostApiInfo(iApiId)->name, DeviceInfo.name, IOType::Output, DeviceInfo, {DeviceInfo.defaultSampleRate}, iDevice);
 							}
 						}
 						if((DeviceInfo.maxInputChannels > 0) && (DeviceInfo.maxOutputChannels > 0)) {

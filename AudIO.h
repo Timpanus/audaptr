@@ -44,6 +44,8 @@ namespace Audaptr
 			return (bool)(Pa_IsStreamStopped(pPaStream_) == 0);
 		}
 
+		double Latency_s();
+
 		/// @brief Obtain the status of the AudIO device
 		/// @return Status of the AudIO device, represented as a string
 		const std::string Status()
@@ -70,11 +72,17 @@ namespace Audaptr
 
 		/// @brief Access the AudIO device input buffer
 		/// @return The buffer associated with input samples
-		QuickBuffer<float> & InBuffer();
+		inline QuickBuffer<float>& InBuffer()
+		{
+			return InputBuffer_;
+		}
 
 		/// @brief Acces the AudIO device output buffer
 		/// @return The buffer associated with output samples
-		QuickBuffer<float>& OutBuffer();
+		inline QuickBuffer<float>& OutBuffer()
+		{
+			return OutputBuffer_;
+		}
 
 #ifdef paAsioUseChannelSelectors
 		/// @param[in] hWindow Handle to main application window, where hwnd is of type HWND (cast to void*)
@@ -84,7 +92,7 @@ namespace Audaptr
 
 		void SetWinMmeStreamParams();
 
-		protected:
+	protected:
 
 		std::vector<int> AsioInputChannels_;
 
@@ -138,6 +146,8 @@ namespace Audaptr
 		int OutputOverflowCount_;
 
 		double SampleRate_Hz_ = -1.0;
+
+		double Latency_s_ = 0.0;
 
 	protected:
 		friend static int InputPaCallback(const void* pInputBuffer, void* pOutputBuffer, unsigned long FramesPerBuffer, const PaStreamCallbackTimeInfo* pTimeInfo, PaStreamCallbackFlags StatusFlags, void* pUserData);

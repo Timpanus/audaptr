@@ -15,6 +15,7 @@
 #include "QuickBuffer.h"
 
 using namespace std;
+using namespace std::string_literals;
 
 namespace Audaptr {
 
@@ -42,6 +43,8 @@ Binding AudioMap::DefaultInputDevice_{"", "", IOType::Input, PaDeviceInfo(), {},
 Binding AudioMap::DefaultOutputDevice_{"", "", IOType::Output, PaDeviceInfo(), {}, -1};
 
 const std::vector<std::string> Binding::TypeStrings({ "Input", "Output", "Duplex", "Any" });
+
+const std::vector<std::string> IOTypeNames = {"Input"s, "Output"s, "Duplex"s};
 
 bool StringContains(const string & strInput, const string & strSearch)
 {
